@@ -8,7 +8,7 @@ const moment = require('moment');
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors());
 
 // Conectar a MongoDB
 mongoose.connect(process.env.MONGO_URI, {
@@ -285,16 +285,15 @@ app.put('/tasks/:id', verifyToken, async (req, res) => {
 
       // Obtener el rol del usuario en el grupo
       const role = await Role.findById(member.role);
-      console.log(role.permissions);
       // Verificar si el rol tiene permisos para editar tareas
       if (!role.permissions.includes("edit_tasks")) {
         return res.status(200).json({ success: false, message: "No tienes permisos para actualizar esta tarea" });
       }else if (role.permissions.includes("view_tasks")) {
-        /*
+        
         if (Object.keys(req.body).length !== 1 || !req.body.status) {
           return res.status(200).json({ success: false, message: "Solo puedes modificar el estado de la tarea" });
         }
-        */
+        
       }
     }
 
@@ -326,15 +325,25 @@ app.delete('/tasks/:id', verifyToken, async (req, res) => {
 });
 
 // Crear un nuevo grupo
+// Crear un nuevo grupo
 app.post('/groups', verifyToken, async (req, res) => {
   try {
     const { name, description } = req.body;
+
+    // Buscar el rol "Admin"
+    const adminRole = await Role.findOne({ name: "Admin" });
+    if (!adminRole) {
+      return res.status(200).json({ success: false, message: "El rol 'Admin' no existe en la base de datos." });
+    }
+
+    // Crear el grupo con el creador como "Admin"
     const newGroup = new Group({
       name,
       description,
       createdBy: req.userId,
-      members: [{ user: req.userId, role: null }], // El creador es miembro por defecto
+      members: [{ user: req.userId, role: adminRole._id }], // Asignar el rol "Admin" al creador
     });
+
     await newGroup.save();
     res.json({ success: true, message: "Grupo creado con éxito", group: newGroup });
   } catch (error) {
@@ -342,6 +351,22 @@ app.post('/groups', verifyToken, async (req, res) => {
     res.status(500).json({ success: false, message: "Error en el servidor" });
   }
 });
+
+const createAdminRole = async () => {
+  try {
+    const adminRole = await Role.findOne({ name: "Admin" });
+    if (!adminRole) {
+      const newAdminRole = new Role({
+        name: "Admin",
+        permissions: ["create_tasks", "edit_tasks", "delete_tasks", "manage_group"],
+      });
+      await newAdminRole.save();
+      console.log("Rol 'Admin' creado con éxito.");
+    }
+  } catch (error) {
+    console.error("Error al crear el rol 'Admin':", error);
+  }
+};
 
 // Agregar un usuario a un grupo
 app.post('/groups/:groupId/add-member', verifyToken, async (req, res) => {
